@@ -1,19 +1,20 @@
-KEY = "<YOUR GOOGLE API KEY>"
-
 function getDirections(origin, destination) {
-  var url = "https://maps.googleapis.com/maps/api/directions/json?origin=" + origin + "&destination=" + destination + "&key=" + KEY
-  return fetch(url).then(function (response) {
-    return response.json()
-  }).then(function (json) {
+  return new Promise(function (resolve, reject){
+    var directionsService = new google.maps.DirectionsService;
+    directionsService.route({
+      origin: origin,
+      destination: destination,
+      travelMode: 'DRIVING'
+    }, function (response, status) {
+      if (response["routes"].length == 0) return null;
 
-    if (json["routes"].length == 0) return null;
-
-    var overview_polyline = json["routes"][0]["overview_polyline"]["points"]
-    var decodedPath = google.maps.geometry.encoding.decodePath(overview_polyline).map(function (pt) {
-      return [pt.lat(), pt.lng()]
-    })
-    return decodedPath;
-  })
+      var overview_polyline = response["routes"][0]["overview_polyline"]
+      var decodedPath = google.maps.geometry.encoding.decodePath(overview_polyline).map(function (pt) {
+        return [pt.lat(), pt.lng()]
+      })
+      resolve(decodedPath);
+    });
+  });
 }
 
 function getSpritpreis(bbs, type, onlyOpen) {
@@ -21,7 +22,7 @@ function getSpritpreis(bbs, type, onlyOpen) {
   var str = encodeURIComponent(strJson)
   var myHeaders = new Headers();
   myHeaders.append("Content-Type", "application/x-www-form-urlencoded");
-  return fetch("http://www.spritpreisrechner.at/ts/GasStationServlet",
+  return fetch("https://cors-anywhere.herokuapp.com/http://www.spritpreisrechner.at/ts/GasStationServlet",
     {
       method: "POST",
       body: "data=" + str,
