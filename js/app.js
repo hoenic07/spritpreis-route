@@ -1,11 +1,15 @@
 mapGlobal = null;
 mapChildren = []
 function init() {
+  if(!navigator.geolocation){
+    $("#currentLocation").hide()
+  }
+
   initMap();
   showMap(false);
   $("#search").click(search)
   $("#new-search").click(newSearch)
-
+  $("#currentLocation").click(getCurrentLocation)
 }
 
 function initMap() {
@@ -20,80 +24,35 @@ function search() {
   var origin = $("#origin").val();
   var destination = $("#destination").val();
   var type = $('input[name=sprittype]:checked').val();
-  var onlyOpen = "checked";
-  if ($('#onlyopen').is(":checked")) {
-    onlyOpen = ""
-  }
+  var onlyOpen = $('#onlyopen').is(":checked");
 
   showMap(true);
   mapGlobal.invalidateSize();
-  getDirections(origin, destination).then(function (pts) {
-
-    if (pts == null) {
+  getDirections(origin, destination)
+    .then((pts)=>{
+      showRouteOnMap(pts)
+      searchPts = calculateSearchPoints(pts)
+      return getSpritpreisForRoute(searchPts, type, onlyOpen);
+    },()=> {
       newSearch();
       alert("Keine Route gefunden!");
       return [];
-    }
-
-    var polyline = L.polyline(pts, { color: 'red' }).addTo(mapGlobal);
-    mapChildren.push(polyline)
-    mapGlobal.fitBounds(polyline.getBounds());
-
-    var searchPts = []
-    searchPts.push(pts[0])
-
-    var curDist = 0
-    for (var i = 0; i < pts.length - 1; i++) {
-      curDist += haversineDistance(pts[i], pts[i + 1], false)
-      if (curDist > 25) {
-        curDist = 0
-        searchPts.push(pts[i])
-      }
-    }
-
-    bbs = searchPts.map(function (pt) {
-      var cc = L.circle(pt, { radius: 15000 })
-      var bb = cc.addTo(mapGlobal).getBounds();
-      mapChildren.push(cc)
-      cc.remove();
-      return bb;
-    })
-
-    return getSpritpreisForRoute(bbs, type, onlyOpen);
-  }).then(function (stations) {
-    var cnt = 0;
-    stations.forEach(function (st) {
-      var price = st["spritPrice"][0]["amount"]
-      if (cnt++ < 5) cls = "station-icon-cheap"
-      else cls = "station-icon"
-      var today = new Date().getDay();
-      if (today == 0) today == 7;
-      var open = st["openingHours"].sort((a, b) => a["day"]["order"] - b["day"]["order"]).map(function (day) {
-        var begin = day["beginn"]
-        var end = day["end"]
-        var label = day["day"]["dayLabel"]
-
-        var labelStr = label;
-
-        if (begin == end) value = label + " geschlossen"
-        else value = label + " " + begin + "-" + end
-        if (day["day"]["order"] == today) value = "<b>" + value + "</b>"
-        return value
-      }).join("<br>")
-
-      var myIcon = L.divIcon({ html: price, className: cls });
-      var marker = L.marker([st["latitude"], st["longitude"]], { icon: myIcon })
-      marker.bindPopup("<h6>" + st["gasStationName"] + "</h6>" + st["address"] + "<br>" + st["city"] + "<br><br>" + open).openPopup();
-      marker.addTo(mapGlobal);
-      mapChildren.push(marker)
-    }, this);
-  });
+    }).then(addStations);
 }
 
 function newSearch() {
   showMap(false);
   mapChildren.forEach(c => c.remove())
   mapChildren = []
+}
+
+function getCurrentLocation(){
+  navigator.geolocation.getCurrentPosition((pos)=>{
+    const locStr = `${pos.coords.latitude} ${pos.coords.longitude}`
+    $("#origin").val(locStr);
+  }, (error)=>{
+    alert("Standort konnte nicht ermittelt werden!");
+  });
 }
 
 function showMap(show) {
@@ -105,6 +64,59 @@ function showMap(show) {
     $("#input").show();
     $("#map").hide();
   }
+}
+
+function showRouteOnMap(routePts){
+  var polyline = L.polyline(routePts, { color: 'red' }).addTo(mapGlobal);
+  mapChildren.push(polyline)
+  mapGlobal.fitBounds(polyline.getBounds());
+}
+
+function calculateSearchPoints(routePts) {
+  let searchPts = []
+  searchPts.push(routePts[0])
+
+  let curDist = 0
+  for (let i = 0; i < routePts.length - 1; i++) {
+    curDist += haversineDistance(routePts[i], routePts[i + 1], false)
+    if (curDist > 25) {
+      curDist = 0
+      searchPts.push(routePts[i])
+    }
+  }
+
+  return searchPts
+}
+
+function addStations(stations){
+  var cnt = 0;
+  stations.forEach((st)=>{
+    var price = st["prices"][0]["amount"]
+    if (cnt++ < 5) cls = "station-icon-cheap"
+    else cls = "station-icon"
+    var today = new Date().getDay();
+    if (today == 0) today == 7;
+    var open = st["openingHours"].sort((a, b) => a["order"] - b["order"]).map(function (day) {
+      var begin = day["from"]
+      var end = day["to"]
+      var label = day["label"]
+  
+      var labelStr = label;
+  
+      if (begin == end) value = label + " geschlossen"
+      else value = label + " " + begin + "-" + end
+      if (day["order"] == today) value = "<b>" + value + "</b>"
+      return value
+    }).join("<br>")
+  
+    const loc = st["location"]
+  
+    var myIcon = L.divIcon({ html: price, className: cls });
+    var marker = L.marker([loc["latitude"], loc["longitude"]], { icon: myIcon })
+    marker.bindPopup("<h6>" + st["name"] + "</h6>" + loc["address"] + "<br>" + loc["city"] + "<br><br>" + open).openPopup();
+    marker.addTo(mapGlobal);
+    mapChildren.push(marker)
+  }, this);
 }
 
 $(document).ready(function () {
